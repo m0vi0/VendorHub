@@ -1,26 +1,22 @@
 /// <reference path="./types/express.d.ts" />
-import express from 'express'
-import type { Request, Response, NextFunction } from 'express'
+import 'dotenv/config';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import * as crypto from 'crypto'
 import cookieParser from 'cookie-parser'
 import bcrypt from 'bcrypt'
 import { db } from '../db.js'
-import { error } from 'console'
 import sessioncheck from '../middleware/sessioncheck.js'
-import { userInfo } from 'os'
+
 
 const app = express()
-const PORT = 1738;
 
-const SECRET = 'vendorhub'
-
-const saltRounds = 10;
 
 app.use(express.static('public'));
 app.use(express.json());
-app.use(cookieParser(SECRET))
+app.use(cookieParser(process.env.SALT_ROUNDS))
 app.use(express.urlencoded({ extended: true }));
-
+console.log(Date(), 'Server Running')
 
 interface UserInfo {
   id: number,
@@ -28,6 +24,7 @@ interface UserInfo {
   hash: string,
   role: string //either client or vendor 
 }
+
 interface SqliteError extends Error {
   code: string
 }
@@ -39,16 +36,16 @@ interface AppSession {
 }
 app.set('view engine', 'ejs')
 
-app.use((req, res, next) => {
+app.use((_req, _res, next) => {
   console.log('LOGS:');
   next();
 });
 
-app.get('/', (req, res, next) => res.send('homepage'))
+app.get('/', (_req, res, _next) => res.send('homepage'))
 
-app.get('/logout', sessioncheck, (req, res, next) => {
+app.get('/logout', sessioncheck, (req, res, _next) => {
   const sessionId = req.cookies?.session_id
-  db.prepare(`DELETE * FROM sessions WHERE id=?`).run(sessionId)
+  db.prepare(`DELETE FROM sessions WHERE id=?`).run(sessionId)
   res.clearCookie("session_id")
   res.redirect('/')
 })
@@ -58,6 +55,7 @@ app.post('/', (req, res) => {
   if (userId === undefined) {
     return res.send('error becasue userid undefined')
   }
+
   const userinfo = db.prepare(`SELECT * FROM users WHERE id=?`).get(userId) as UserInfo | undefined
   if (!userinfo) return res.status(401)
 
@@ -68,26 +66,30 @@ app.post('/', (req, res) => {
   res.send('autologin from cookie didnt work')
 })
 
-app.get(`/users/:userid/client`, (req, res, next) => {
+app.get(`/users/:userid/client`, (req, res, _next) => {
   const userid = req.params.userid
-  res.send('success from userid')
+  res.send(`success from userid:${userid}`)
 })
 
-app.get(`/users/:userid/vendor`, (req: Request, res: Response, next: NextFunction) => {
+app.get(`/users/:userid/vendor`, (req: Request, res: Response, _next: NextFunction) => {
   const userid = req.params.userid
-  res.send('success from userid')
+  res.send(`success from userid:${userid}/vendor`)
 
 })
 
 
-function check_user(user: UserInfo) {
+function check_user(req: Request, res: Response, next: NextFunction): void {
+  const user = req.user
   if (!user.email || !user.hash || !user.role) {
-    return error
+    res.status(400).json({ message: "invalid user" })
+    return
   }
+  next()
 }
 
-app.post('/signup', async (req, res) => {
-  const hash = await bcrypt.hash(req.body.password, saltRounds)
+app.post('/signup', async (req, res, _next: NextFunction) => {
+  const saltrounds = Number(process.env.SALT_ROUNDS)
+  const hash = await bcrypt.hash(req.body.password, saltrounds)
   try {
     const row = db.prepare(`
       INSERT INTO users (email,hash,role) VALUES (?,?,?) RETURNING id,email,role;
@@ -95,8 +97,8 @@ app.post('/signup', async (req, res) => {
     if (!row) {
       return res.status(404)
     }
-  
-    check_user(row)
+
+    check_user(req, res, _next)
 
     const session: AppSession = {
       id: crypto.randomUUID(),
@@ -130,4 +132,12 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0')
+app.get('/api/dashboard/summary', (req, res, _next) => {
+  res.json({
+    "Row 1": db.prepare(`SELECT * FROM users WHERE id=?`).get(req.query.id)
+  });
+});
+const PORT = process.env.PORT || 1738
+app.listen(PORT, () => {
+  console.log(`\nListening on http://localhost:${PORT}`)
+})

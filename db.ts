@@ -1,5 +1,5 @@
-import Database from "better-sqlite3"
-export const db = new Database("database.db")
+import Database, { Database as DatabaseType } from "better-sqlite3"
+export const db: DatabaseType = new Database("database.db")
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS users (
@@ -10,15 +10,12 @@ db.prepare(`
   )
 `).run()
 
-
-
 db.prepare(`
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,
     FOREIGN KEY (user_id) REFERENCES users(id)
   )
 `).run()
-
-

@@ -1,14 +1,25 @@
-//check if action / actor has a session
-import express from 'express'
-import cookieParser from "cookie-parser";
 import type { Request, Response, NextFunction } from "express";
-const app = express()
-app.use(cookieParser())
+import { db } from "../db.js";
 
-function checksSession(req: Request, res: Response, next: NextFunction) {
-    if (!req.cookies?.session_id) {
-        return res.status(401)
-    }
-    next()
+function checksSession(req: Request, res: Response, next: NextFunction): void {
+  const sessionId = req.cookies?.session_id;
+  
+  if (!sessionId) {
+    res.status(401).send('Authentication required');
+    return;
+  }
+  
+  const session = db.prepare(
+    `SELECT * FROM sessions WHERE id = ? AND expires_at > datetime('now')`
+  ).get(sessionId);
+  
+  if (!session) {
+    res.clearCookie("session_id");
+    res.status(401).send('Session expired or invalid');
+    return;
+  }
+  
+  next();
 }
-export default checksSession
+
+export default checksSession;
